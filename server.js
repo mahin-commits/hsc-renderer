@@ -1,10 +1,12 @@
 /**
  * 🎨 HSC Slides — HTML to PNG Renderer
- * Uses regular Puppeteer with proper args for Render.com free tier
+ * Uses @sparticuz/chromium for low-memory serverless environments
+ * Compatible with Render.com free tier (512MB RAM)
  */
 
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 const app = express();
 app.use(express.json({ limit: '5mb' }));
@@ -24,40 +26,25 @@ async function getBrowser() {
     return browserInstance;
   }
   
-  console.log('Launching Puppeteer browser...');
+  console.log('Launching browser via @sparticuz/chromium...');
+  
+  const executablePath = await chromium.executablePath();
+  console.log('Chromium path:', executablePath);
   
   browserInstance = await puppeteer.launch({
-    headless: 'new',
     args: [
+      ...chromium.args,
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
       '--disable-gpu',
-      '--disable-extensions',
-      '--disable-background-networking',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-breakpad',
-      '--disable-client-side-phishing-detection',
-      '--disable-component-extensions-with-background-pages',
-      '--disable-default-apps',
-      '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-      '--disable-hang-monitor',
-      '--disable-ipc-flooding-protection',
-      '--disable-popup-blocking',
-      '--disable-prompt-on-repost',
-      '--disable-renderer-backgrounding',
-      '--disable-sync',
-      '--force-color-profile=srgb',
-      '--metrics-recording-only',
-      '--mute-audio',
-      '--password-store=basic',
-      '--use-mock-keychain'
-    ]
+      '--single-process',
+      '--no-zygote'
+    ],
+    defaultViewport: chromium.defaultViewport,
+    executablePath: executablePath,
+    headless: chromium.headless,
+    ignoreHTTPSErrors: true
   });
   
   console.log('Browser launched successfully');
