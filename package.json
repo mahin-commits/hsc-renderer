@@ -1,17 +1,16 @@
 {
   "name": "hsc-slide-renderer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Free HTML to PNG renderer for HSC Slide automation",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "postinstall": "node -e \"require('puppeteer/install.js').downloadBrowser()\""
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "puppeteer": "^22.0.0"
+    "puppeteer": "^21.11.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   }
 }
