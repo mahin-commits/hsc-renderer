@@ -1,9 +1,6 @@
 /**
  * 🎨 HSC Slides — HTML to PNG Renderer
- * Free deployment on Render.com
- * 
- * Renders HTML (with KaTeX + Bangla fonts) into PNG images
- * using Puppeteer.
+ * Uses regular Puppeteer with proper args for Render.com free tier
  */
 
 const express = require('express');
@@ -12,7 +9,6 @@ const puppeteer = require('puppeteer');
 const app = express();
 app.use(express.json({ limit: '5mb' }));
 
-// CORS for Apps Script
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -21,31 +17,67 @@ app.use((req, res, next) => {
   next();
 });
 
-// Browser instance — reused across requests for speed
 let browserInstance = null;
 
 async function getBrowser() {
   if (browserInstance && browserInstance.isConnected()) {
     return browserInstance;
   }
+  
+  console.log('Launching Puppeteer browser...');
+  
   browserInstance = await puppeteer.launch({
     headless: 'new',
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-gpu',
+      '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--single-process'
+      '--single-process',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad',
+      '--disable-client-side-phishing-detection',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-default-apps',
+      '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+      '--disable-hang-monitor',
+      '--disable-ipc-flooding-protection',
+      '--disable-popup-blocking',
+      '--disable-prompt-on-repost',
+      '--disable-renderer-backgrounding',
+      '--disable-sync',
+      '--force-color-profile=srgb',
+      '--metrics-recording-only',
+      '--mute-audio',
+      '--password-store=basic',
+      '--use-mock-keychain'
     ]
   });
+  
+  console.log('Browser launched successfully');
   return browserInstance;
 }
 
 // Health check
 app.get('/', (req, res) => {
   res.send('HSC Renderer is running. POST /render with {html, width, scale}.');
+});
+
+// Diagnostic endpoint
+app.get('/health', async (req, res) => {
+  try {
+    const browser = await getBrowser();
+    const version = await browser.version();
+    res.json({ ok: true, browser: version });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, stack: e.stack });
+  }
 });
 
 // Render endpoint
@@ -72,10 +104,8 @@ app.post('/render', async (req, res) => {
       timeout: 20000 
     });
     
-    // Wait extra for fonts and KaTeX
     await new Promise(r => setTimeout(r, 1200));
     
-    // Measure actual content
     const dims = await page.evaluate(() => {
       const el = document.getElementById('content') || document.body;
       const rect = el.getBoundingClientRect();
@@ -111,7 +141,10 @@ app.post('/render', async (req, res) => {
     if (page) {
       try { await page.close(); } catch {}
     }
-    res.status(500).send('Render error: ' + e.message);
+    res.status(500).json({
+      error: e.message,
+      stack: e.stack
+    });
   }
 });
 
