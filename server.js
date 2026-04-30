@@ -1,7 +1,6 @@
 /**
- * 🎨 HSC Slides — HTML to PNG Renderer
- * Uses @sparticuz/chromium for low-memory serverless environments
- * Compatible with Render.com free tier (512MB RAM)
+ * 🎨 HSC Slides - HTML to PNG Renderer
+ * Fixed version with proper timeout handling
  */
 
 const express = require('express');
@@ -38,7 +37,6 @@ async function getBrowser() {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--single-process',
       '--no-zygote'
     ],
     defaultViewport: chromium.defaultViewport,
@@ -51,12 +49,10 @@ async function getBrowser() {
   return browserInstance;
 }
 
-// Health check
 app.get('/', (req, res) => {
   res.send('HSC Renderer is running. POST /render with {html, width, scale}.');
 });
 
-// Diagnostic endpoint
 app.get('/health', async (req, res) => {
   try {
     const browser = await getBrowser();
@@ -67,18 +63,24 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// Render endpoint
 app.post('/render', async (req, res) => {
+  const startTime = Date.now();
   const { html, width = 800, scale = 2 } = req.body;
   
   if (!html) {
-    return res.status(400).send('Missing "html" field');
+    return res.status(400).send('Missing html field');
   }
   
   let page;
   try {
+    console.log('[Render] Starting...');
     const browser = await getBrowser();
     page = await browser.newPage();
+    
+    // Block fonts and other slow resources we can wait for separately
+    // Allow them but with strict timeout
+    await page.setDefaultNavigationTimeout(8000);
+    await page.setDefaultTimeout(8000);
     
     await page.setViewport({
       width: parseInt(width),
@@ -86,12 +88,34 @@ app.post('/render', async (req, res) => {
       deviceScaleFactor: parseInt(scale)
     });
     
-    await page.setContent(html, { 
-      waitUntil: 'networkidle0', 
-      timeout: 20000 
-    });
+    console.log('[Render] Setting content...');
     
-    await new Promise(r => setTimeout(r, 1200));
+    // Use 'domcontentloaded' instead of 'networkidle0' - much faster, doesn't wait for fonts/CDN
+    try {
+      await page.setContent(html, { 
+        waitUntil: 'domcontentloaded', 
+        timeout: 8000 
+      });
+    } catch (navErr) {
+      console.log('[Render] Nav timeout, continuing anyway:', navErr.message);
+    }
+    
+    console.log('[Render] Waiting for render...');
+    
+    // Give KaTeX and fonts time to render (but with hard limit)
+    await new Promise(r => setTimeout(r, 2000));
+    
+    // Try to wait for KaTeX rendering signal, but don't block forever
+    try {
+      await page.waitForFunction(
+        () => document.body.getAttribute('data-rendered') === 'true',
+        { timeout: 3000 }
+      );
+    } catch (e) {
+      console.log('[Render] KaTeX render signal not received, continuing');
+    }
+    
+    console.log('[Render] Measuring dimensions...');
     
     const dims = await page.evaluate(() => {
       const el = document.getElementById('content') || document.body;
@@ -108,6 +132,8 @@ app.post('/render', async (req, res) => {
       deviceScaleFactor: parseInt(scale)
     });
     
+    console.log('[Render] Taking screenshot...');
+    
     const png = await page.screenshot({
       type: 'png',
       omitBackground: true,
@@ -120,11 +146,14 @@ app.post('/render', async (req, res) => {
     
     await page.close();
     
+    const elapsed = Date.now() - startTime;
+    console.log(`[Render] Done in ${elapsed}ms`);
+    
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=86400');
     res.send(png);
   } catch (e) {
-    console.error('Render error:', e);
+    console.error('[Render] Error:', e.message);
     if (page) {
       try { await page.close(); } catch {}
     }
